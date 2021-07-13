@@ -9,7 +9,11 @@
 				"-g",
 				"${file}",
 				"-o",
-				"${fileDirname}/${fileBasenameNoExtension}"
+				"${fileDirname}/${fileBasenameNoExtension}",
+				"$(pkg-config",
+				"opencv4",
+				"--libs",
+				"--cflags)"
 			],
 			"options": {
 				"cwd": "${fileDirname}"
