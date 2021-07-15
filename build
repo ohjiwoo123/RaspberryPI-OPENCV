@@ -1,1 +1,2 @@
 g++ -o videoRecord_basic videoRecord_basic.cpp $(pkg-config opencv4 --libs --cflags)
+

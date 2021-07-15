@@ -1,5 +1,8 @@
 // OpenCV를 사용하여 동영상 녹화하기
 // API설명 참조 사이트 : https://opencvlib.weebly.com/
+// 오지우 과제 제출 
+// 멀티프로세스, 멀티스레드 구현 x 
+// 폴더 생성 및 용량 표시 삭제 구현까지 로그 구현 완료. 
 
 #include <opencv2/core.hpp>
 #include <opencv2/videoio.hpp>
@@ -19,55 +22,103 @@
 #include <time.h>
 #include <sys/time.h>
 
+using namespace cv;
+using namespace std;
 
+#define VIDEO_WINDOW_NAME "record"
+#define TIME_FILENAME 0
+#define FOLDER_NAME   1
+#define LOG_TIME      2
 #define MAX_LIST 50 
 
+char fileName[30];
+char tBUF[100];
+char fBUF[100];
 char buf[BUFSIZ];
+char rmdirName[100];
+char dirName[100];
 
+// 현재경로를 가리키는 path
 
-void makefoldername(void)
-{
-    time_t UTCtime;
-    struct tm *tm;
-    // 사용자 문자열로 시간정보를 저장하기 위한 문자열 버퍼
-
-    // 커널에서 시간정보를 읽어서
-    //  UTC 변수에 넣어준다.
-    time(&UTCtime); // UTC 현재시간 읽어오기 
-    printf("time : %u\n",(unsigned)UTCtime); // UTC 현재 시간 출력
-
-    tm = localtime(&UTCtime);
-    
-    // 1st : 우리가 만들 문자열 저장할 버퍼
-    // 2nd : 버퍼 사이즈
-    // 3rd : %a : 간단한 요일, %m :월, %e : 일, %H : 24시, %M :분, %S :초, %Y :년
-    //strftime(buf,sizeof(buf),"%a %m %e %H:%M:%S %Y", tm); // 사용자 정의 문자열 지정
-    strftime(buf,sizeof(buf),"%Y%m%d%H", tm); // 사용자 정의 문자열 지정
-    //printf("strftime: %s\n",buf);
-}
-
-void makefileName(void)
-{
-    time_t UTCtime;
-    struct tm *tm;
-    // 사용자 문자열로 시간정보를 저장하기 위한 문자열 버퍼
-    char buf[BUFSIZ];
-    // 커널에서 시간정보를 읽어서
-    //  UTC 변수에 넣어준다.
-    time(&UTCtime); // UTC 현재시간 읽어오기 
-    printf("time : %u\n",(unsigned)UTCtime); // UTC 현재 시간 출력
-
-    tm = localtime(&UTCtime);
-    
-    // 1st : 우리가 만들 문자열 저장할 버퍼
-    // 2nd : 버퍼 사이즈
-    // 3rd : %a : 간단한 요일, %m :월, %e : 일, %H : 24시, %M :분, %S :초, %Y :년
-    //strftime(buf,sizeof(buf),"%a %m %e %H:%M:%S %Y", tm); // 사용자 정의 문자열 지정
-    strftime(buf,sizeof(buf),"%Y%m%d%H", tm); // 사용자 정의 문자열 지정
-    //printf("strftime: %s\n",buf);
-}
+const char *path = "/home/pi/blackbox"; 
 
 const char *MMOUNT = "/proc/mounts";
+
+/* ".", ".." 은 빼고 나머지 파일명 출력하는 필터 함수 */
+static int filter(const struct dirent *dirent)
+{
+    if((dirent->d_name)[0]!='2'){
+        return 0;
+    }
+    else
+        return 1;
+}
+
+void getTime(int ret_type)
+{
+    time_t UTCtime;
+    struct tm *tm;
+    // 사용자 문자열로 시간정보를 저장하기 위한 문자열 버퍼
+
+    // 커널에서 시간 정보를 읽어서
+    // UTCtime변수에 넣어준다.
+    time(&UTCtime); // UTC 현재 시간 읽어오기
+    //printf("time : %u\n", (unsigned)UTCtime); // UTC 현재 시간 출력
+
+    tm = localtime(&UTCtime);
+    //printf("asctime : %s", asctime(tm)); // 현재의 시간을 tm 구조체를 이용해서 출력
+
+    // 1st : 우리가 만들 문자열 저장할 버퍼
+    // 2nd : 버퍼 사이즈
+    // 3rd : %a : 간단한 요일, %m :월, %e : 일, %H : 24시, %M :분, %S :초, %Y :년
+    //strftime(buf,sizeof(buf),"%a %m %e %H:%M:%S %Y", tm); // 사용자 정의 문자열 지정
+    if (ret_type==TIME_FILENAME)
+        strftime(tBUF,sizeof(tBUF),"%Y%m%d%H%M%S.avi", tm);
+    else if(ret_type==FOLDER_NAME)
+        strftime(fBUF,sizeof(fBUF),"%Y%m%d%H", tm);
+    else if(ret_type==LOG_TIME)
+        strftime(tBUF,sizeof(tBUF),"[%Y-%m-%d %H:%M:%S]", tm);
+    //printf("strftime: %s\n",buf);
+}
+
+int rmdirs(const char *path, int force) { 
+    DIR * dir_ptr = NULL; 
+    struct dirent *file = NULL; 
+    struct stat buf; 
+    char filename[1024]; 
+    /* 목록을 읽을 디렉토리명으로 DIR *를 return 받습니다. */ 
+    if((dir_ptr = opendir(path)) == NULL) { 
+        /* path가 디렉토리가 아니라면 삭제하고 종료합니다. */ 
+        return unlink(path); 
+        } 
+        /* 디렉토리의 처음부터 파일 또는 디렉토리명을 순서대로 한개씩 읽습니다. */ 
+    while((file = readdir(dir_ptr)) != NULL) { 
+        // readdir 읽혀진 파일명 중에 현재 디렉토리를 나타네는 . 도 포함되어 있으므로 // 무한 반복에 빠지지 않으려면 파일명이 . 이면 skip 해야 함 
+        if(strcmp(file->d_name, ".") == 0 || strcmp(file->d_name, "..") == 0) { 
+            continue; 
+        } 
+        sprintf(filename, "%s/%s", path, file->d_name); 
+        /* 파일의 속성(파일의 유형, 크기, 생성/변경 시간 등을 얻기 위하여 */ 
+         if(lstat(filename, &buf) == -1) { 
+             continue; 
+             } 
+        if(S_ISDIR(buf.st_mode)) { 
+            // 검색된 이름의 속성이 디렉토리이면 
+            /* 검색된 파일이 directory이면 재귀호출로 하위 디렉토리를 다시 검색 */ 
+            if(rmdirs(filename, force) == -1 && !force) { 
+                return -1; 
+                } 
+             } else if(S_ISREG(buf.st_mode) || S_ISLNK(buf.st_mode)) { 
+                // 일반파일 또는 symbolic link 이면 
+                if(unlink(filename) == -1 && !force) { 
+                    return -1; 
+                    } 
+                }
+        } 
+            /* open된 directory 정보를 close 합니다. */ 
+            closedir(dir_ptr); 
+            return rmdir(path); 
+}
 
 struct f_size
 {
@@ -158,43 +209,11 @@ int AvailableMemory() {
 }
 
 
-int dfclose(MOUNTP *MP)
-{
-    fclose(MP->fp);
-}
 
-using namespace cv;
-using namespace std;
-
-#define VIDEO_WINDOW_NAME "record"
-char fileName[30];
-
-char tBUF[100];
-
-#define TIME_FILENAME 0
-#define FOLDER_NAME   1
-#define LOG_TIME      2
-
-
-// 현재경로를 가리키는 path
-
-const char *path = "/home/jwoh/blackbox/"; 
-
-
-/* ".", ".." 은 빼고 나머지 파일명 출력하는 필터 함수 */
-static int filter(const struct dirent *dirent)
-{
-  if(!(strcmp(dirent->d_name, ".")) ||
-     !(strcmp(dirent->d_name, ".."))){
-             
-     /* 현재 디렉토리, 이전 디렉토리 표시는 출력안함 */
-    }else{
-    // printf("   %s() : %s\n", __FUNCTION__, dirent->d_name);
-    }
-}
 
 long long searchOldFolder(void) 
 { 
+    char rmdirName[100];
     struct dirent **namelist; 
     int count; 
     int idx; 
@@ -235,17 +254,8 @@ long long searchOldFolder(void)
     
     // namelist에 대한 메모리 해제 
     free(namelist); 
-    
-    return min; 
-}
 
-int OldFolder()
-{
-    long long result; 
-    char folderName[30];
-    result = searchOldFolder();
-    printf("result=%lld",result);
-    return result;
+    return min;
 }
 
 int main(int, char**)
@@ -270,24 +280,12 @@ int main(int, char**)
     char dirname[40];
     Mat frame;
 
-    // 2. 현재 시간으로 된 폴더를 생성한다. 
-    makefoldername();
-    sprintf(dirname, "/home/pi/blackbox/data/%s",buf);
-    printf("dirname=%s\n",dirname);
-    printf("\n");
-    mkdir(dirname,0755);
-
-    // 3. 녹화를 시작하기 전에 디스크 용량을 확인한다. 
-    // 용량이 부족하면 가장 오래된 폴더를 삭제한다. 
-    if(AvailableMemory()<10)
-    {
-        remove(searchOldFolder());
-    }
 
     // 로그파일을 기록하기 위해 파일열기
-    fd = open("/home/pi/blackbox/blackbox.log",O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    fd = open("/home/pi/blackbox/data/blackbox.log",O_WRONLY | O_CREAT | O_TRUNC, 0644);
     getTime(LOG_TIME);
     sprintf(buff, "%s blackbox log파일 저장을 시작합니다.\n",tBUF);
+    printf("%s",buff);
     WRByte = write(fd, buff, strlen(buff));
 
     // STEP 1. 카메라 장치 열기 
@@ -321,28 +319,41 @@ int main(int, char**)
         // 시간정보를 읽어와서 파일명을 생성
         // 전역변수 fileName에 저장
         getTime(TIME_FILENAME);
+        getTime(FOLDER_NAME);
         printf("FILENAME:%s\n",tBUF);
-        sprintf(filePath, "/home/pi/blackbox/%s",tBUF);
-        // D I V X = DivX MPEG-4 코덱으로 압축한다. 
-        // writer = 
+        // 2. 현재 시간으로 된 폴더를 생성한다. 
+        
+    
+        int makeFolder;
+        makeFolder=mkdir(fBUF,0700);
+        sprintf(filePath, "/home/pi/blackbox/%s/%s",fBUF,tBUF);
+        // 카메라에서 매 프레임마다 이미지 읽기 
         writer.open(filePath, VideoWriter::fourcc('D','I','V','X'),
         videoFPS, Size(videoWidth, videoHeight), true);
         getTime(LOG_TIME);
-        sprintf(buff, "%s %s 명으로 녹화를 시작합니다.\n",tBUF,filePath);
-        // write = 
-        WRByte = write(fd, buff, strlen(buff));
-
-        if(AvailableMemory()<10){
-            remove("OldFolder()");
+        if(makeFolder==0){
+            sprintf(buff,"%s %s명으로 폴더가 생성되었습니다.\n",tBUF,fBUF);
+            WRByte=write(fd,buff,strlen(buff));
         }
-
-        if (!writer.isOpened())
-        {
-            perror("Can't write video");
+        sprintf(buff,"%s %s 명으로 녹화를 시작합니다.\n",tBUF,filePath);
+        WRByte=write(fd,buff,strlen(buff));
+        if(!writer.isOpened()){
+            perror("Cant write video");
             return -1;
         }
+
         frameCount =0;
         namedWindow(VIDEO_WINDOW_NAME);
+        
+    // 3. 녹화를 시작하기 전에 디스크 용량을 확인한다. 
+    // 용량이 부족하면 가장 오래된 폴더를 삭제한다. 
+        if(AvailableMemory()<60)
+        {
+            sprintf(rmdirName,"%lld",searchOldFolder());
+            printf("용량이 부족하여 가장 오래된 폴더 %s를 삭제합니다",rmdirName);
+            rmdirs(rmdirName,1);
+        }
+        
 
         while(frameCount<MaxFrame)
         {
